@@ -54,6 +54,8 @@ public class PostingService {
             try {
                 PostingResult result = tx.execute(status -> applyOnce(posting));
                 evictAfterCommit(posting);
+                log.info("Posting {} {} amount={} newlyApplied={}", posting.transactionId(), posting.kind(),
+                        posting.amount(), result.newlyApplied());
                 return result;
             } catch (ConcurrencyFailureException e) {
                 // A busy account lost the version check or a lock race; nothing committed, so retry from fresh state.

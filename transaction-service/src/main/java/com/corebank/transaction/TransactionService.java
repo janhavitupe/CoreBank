@@ -8,6 +8,8 @@ import com.corebank.transaction.AccountClient.Applied;
 import com.corebank.transaction.AccountClient.Outcome;
 import com.corebank.transaction.AccountClient.Rejected;
 import com.corebank.transaction.BankTransaction.Kind;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -43,6 +45,8 @@ public class TransactionService {
 
     private record Reservation(UUID transactionId, boolean isNew) {
     }
+
+    private static final Logger log = LoggerFactory.getLogger(TransactionService.class);
 
     private final TransactionRepository transactions;
     private final AccountClient accounts;
@@ -98,6 +102,7 @@ public class TransactionService {
     /** Commits the outcome. Unknown changes nothing: the row stays PENDING for RecoveryJob. */
     public void settle(BankTransaction transaction, Outcome outcome) {
         chaos.crashIfArmed();
+        log.info("Settling transaction {} outcome={}", transaction.getId(), outcome.getClass().getSimpleName());
         switch (outcome) {
             case Applied applied -> tx.executeWithoutResult(status -> complete(transaction, applied));
             case Rejected rejected -> tx.executeWithoutResult(status -> transactions.markFailed(
