@@ -8,8 +8,10 @@ NS=corebank
 ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin-demo-only}
 failures=0
 
-pass() { echo "::notice title=E2E PASS::$1"; }
-fail() { echo "::error title=E2E FAIL::$1"; failures=$((failures + 1)); }
+# GitHub shows only 10 notices per step, so the run summary carries the full list.
+SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
+pass() { echo "::notice title=E2E PASS::$1"; echo "- PASS: $1" >> "$SUMMARY"; }
+fail() { echo "::error title=E2E FAIL::$1"; echo "- **FAIL: $1**" >> "$SUMMARY"; failures=$((failures + 1)); }
 expect() { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1 (expected $3, got $2)"; fi; }
 
 post() { # path token key body
@@ -21,7 +23,8 @@ code() { # path token key body
     ${2:+-H "Authorization: Bearer $2"} ${3:+-H "Idempotency-Key: $3"} -d "$4"
 }
 get() { curl -s -m 15 "$BASE$1" -H "Authorization: Bearer $2"; }
-balance() { get "/api/accounts/$1/balance" "$2" | jq -r '.balance | tonumber'; }
+# jq keeps a number's original text, so "+ 0" turns 7500.0000 into 7500 for comparison and shell arithmetic.
+balance() { get "/api/accounts/$1/balance" "$2" | jq -r '(.balance | tonumber) + 0'; }
 key() { cat /proc/sys/kernel/random/uuid; }
 
 customer() { # name -> sets TOKEN and ACCOUNT
@@ -132,4 +135,5 @@ expect "No duplicate ledger entries" "$(echo "$RECON" | jq .duplicateEntries)" 0
 expect "Every transfer's debit equals its credit" "$(echo "$RECON" | jq .unbalancedTransfers)" 0
 
 echo "::notice title=E2E SUMMARY::$failures failure(s)"
+echo "**$failures failure(s)**" >> "$SUMMARY"
 exit "$failures"
