@@ -18,7 +18,14 @@
                 <customFields>{"service":"${service}"}</customFields>
             </encoder>
         </appender>
-        <!-- Drops events when Logstash is not running, so a stopped ELK stack never affects a request. -->
+        <root level="INFO">
+            <appender-ref ref="JSON_STDOUT"/>
+        </root>
+    </springProfile>
+
+    <!-- Asynchronous and drops events when Logstash is unreachable, so ELK can never slow a request. -->
+    <springProfile name="elk">
+        <statusListener class="ch.qos.logback.core.status.NopStatusListener"/>
         <appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
             <destination>${logstashDestination}</destination>
             <encoder class="net.logstash.logback.encoder.LogstashEncoder">
@@ -26,7 +33,6 @@
             </encoder>
         </appender>
         <root level="INFO">
-            <appender-ref ref="JSON_STDOUT"/>
             <appender-ref ref="LOGSTASH"/>
         </root>
     </springProfile>

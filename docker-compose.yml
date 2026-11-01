@@ -6,7 +6,7 @@
 x-service: &service
   restart: unless-stopped
   environment: &service-env
-    SPRING_PROFILES_ACTIVE: docker
+    SPRING_PROFILES_ACTIVE: docker,elk
     DB_URL: jdbc:postgresql://postgres:5432/corebank
     DB_USER: corebank
     DB_PASSWORD: corebank
@@ -149,7 +149,7 @@ services:
       ACCOUNT_SERVICE_URL: http://account-service:8082
       TRANSACTION_SERVICE_URL: http://transaction-service:8083
       GOOGLE_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
     ports:
       - "127.0.0.1:8085:8085"
     healthcheck:
@@ -164,7 +164,7 @@ services:
         SERVICE: gateway
     image: corebank/gateway:1.0.0
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      SPRING_PROFILES_ACTIVE: docker,elk
       REDIS_HOST: redis
       CUSTOMER_SERVICE_URL: http://customer-service:8081
       ACCOUNT_SERVICE_URL: http://account-service:8082

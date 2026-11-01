@@ -34,5 +34,5 @@ corebank:
   transaction-service-url: ${TRANSACTION_SERVICE_URL:http://localhost:8083}
   gemini:
     api-key: ${GOOGLE_API_KEY:}
-    model: ${GEMINI_MODEL:gemini-2.5-flash}
+    model: ${GEMINI_MODEL:gemini-3.5-flash}
     timeout-seconds: 20

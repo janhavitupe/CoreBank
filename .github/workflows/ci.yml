@@ -93,10 +93,13 @@ jobs:
       - name: Show pods on failure
         if: failure()
         run: |
-          kubectl -n corebank get pods -o wide
-          for pod in $(kubectl -n corebank get pods -o name); do
-            lines=$(kubectl -n corebank logs $pod --tail=4 2>&1 | cut -c1-300 | tr '\n' ' ')
-            echo "::warning title=$pod::$lines"
+          echo "::warning title=pods::$(kubectl -n corebank get pods --no-headers | awk '{print $1, $2, $3, "restarts=" $4}' | tr '\n' '|')"
+          echo "::warning title=events::$(kubectl -n corebank get events --field-selector type=Warning --sort-by=.lastTimestamp | tail -6 | cut -c1-170 | tr '\n' '|')"
+          for s in $SERVICES; do
+            pod=deployment/$s
+            state=$(kubectl -n corebank get pods -l app=$s -o jsonpath='{.items[0].status.containerStatuses[0].lastState.terminated.reason}')
+            lines=$(kubectl -n corebank logs $pod --tail=300 2>&1 | grep -E 'Started |ERROR|Caused by|APPLICATION FAILED|Exception' | tail -3 | cut -c1-260 | tr '\n' ' ')
+            echo "::warning title=$s last=$state::$lines"
           done
 
   deploy-aks:
