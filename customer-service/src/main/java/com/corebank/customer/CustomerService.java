@@ -3,8 +3,6 @@ package com.corebank.customer;
 import com.corebank.common.events.Topics;
 import com.corebank.common.outbox.OutboxWriter;
 import com.corebank.common.web.ApiException;
-import com.corebank.customer.Repositories.CredentialRepository;
-import com.corebank.customer.Repositories.CustomerRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;

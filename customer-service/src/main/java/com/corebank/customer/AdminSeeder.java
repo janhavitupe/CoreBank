@@ -1,6 +1,5 @@
 package com.corebank.customer;
 
-import com.corebank.customer.Repositories.CustomerRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;

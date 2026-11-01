@@ -11,6 +11,7 @@ const RATE = Number(__ENV.RATE || 100);
 const PAIRS = 20;
 
 export const options = {
+  setupTimeout: '5m',
   scenarios: {
     transfers: {
       executor: 'constant-arrival-rate',
