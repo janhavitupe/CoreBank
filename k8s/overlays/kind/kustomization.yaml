@@ -13,3 +13,17 @@ secretGenerator:
       - GOOGLE_API_KEY=
 generatorOptions:
   disableNameSuffixHash: true
+patches:
+  - target:
+      kind: ConfigMap
+      name: corebank-config
+    patch: |-
+      - op: add
+        path: /data/CHAOS_ENABLED
+        value: "true"
+      - op: add
+        path: /data/RATE_LIMIT_PER_SECOND
+        value: "2000"
+      - op: add
+        path: /data/RATE_LIMIT_BURST
+        value: "4000"

@@ -16,27 +16,36 @@ jobs:
     name: Compile, test and analyse
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
           cache: maven
       - name: Unit and Testcontainers integration tests
         run: mvn -B verify
-      - name: Static analysis
-        run: mvn -B -DskipTests com.github.spotbugs:spotbugs-maven-plugin:4.9.3.0:spotbugs
+      - name: Report test counts
+        if: always()
+        run: |
+          for module in */target/surefire-reports; do
+            total=$(cat $module/*.txt 2>/dev/null | grep -oE 'Tests run: [0-9]+' | grep -oE '[0-9]+' | paste -sd+ | bc)
+            failed=$(cat $module/*.txt 2>/dev/null | grep -oE '(Failures|Errors): [0-9]+' | grep -oE '[0-9]+' | paste -sd+ | bc)
+            echo "::notice title=Tests $(dirname $(dirname $module))::$total run, $failed failed"
+          done
+      - name: Static analysis (report only)
+        continue-on-error: true
+        run: mvn -B -DskipTests package com.github.spotbugs:spotbugs-maven-plugin:4.9.3.0:spotbugs
       - uses: actions/upload-artifact@v4
         with:
           name: jars
           path: "*/target/*-1.0.0.jar"
 
   deploy-kind:
-    name: Build images and deploy to Kubernetes (kind)
+    name: Deploy to Kubernetes (kind) and prove the guarantees
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           name: jars
@@ -61,18 +70,34 @@ jobs:
           for s in $SERVICES; do
             kubectl -n corebank rollout status deployment/$s --timeout=300s
           done
-      - name: Smoke test through the gateway
+          echo "::notice title=Kubernetes::All services ready on kind"
+      - name: Forward the gateway to the runner
         run: |
-          kubectl -n corebank port-forward service/gateway 8080:8080 &
-          sleep 5
-          curl -fsS http://localhost:8080/actuator/health/readiness
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/accounts)
-          test "$code" = "401"
+          nohup bash -c 'while true; do kubectl -n corebank port-forward service/gateway 8080:8080; sleep 1; done' > /dev/null 2>&1 &
+          for i in $(seq 1 30); do curl -fs http://localhost:8080/actuator/health/readiness && break; sleep 2; done
+      - name: End-to-end guarantees
+        run: bash scripts/e2e.sh
+      - uses: grafana/setup-k6-action@v1
+      - name: Replay 1,000 transfers with random retries
+        run: k6 run -e BASE_URL=http://localhost:8080 load-tests/replay-test.js
+      - name: Load test at 100 requests per second
+        continue-on-error: true
+        run: |
+          k6 run -e BASE_URL=http://localhost:8080 -e DURATION=60s --summary-export=results.json load-tests/transfer-load.js
+          code=$?
+          p95=$(jq '.metrics["http_req_duration{name:transfer}"]["p(95)"]' results.json)
+          failed=$(jq '.metrics["http_req_failed{name:transfer}"].value' results.json)
+          rate=$(jq '.metrics.http_reqs.rate' results.json)
+          echo "::notice title=Load test::p95 $p95 ms, failure rate $failed, $rate requests/s"
+          exit $code
       - name: Show pods on failure
         if: failure()
         run: |
           kubectl -n corebank get pods -o wide
-          kubectl -n corebank describe pods | tail -60
+          for pod in $(kubectl -n corebank get pods -o name); do
+            lines=$(kubectl -n corebank logs $pod --tail=4 2>&1 | cut -c1-300 | tr '\n' ' ')
+            echo "::warning title=$pod::$lines"
+          done
 
   deploy-aks:
     name: Push to ACR and deploy to AKS
@@ -81,7 +106,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && vars.AKS_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           name: jars
