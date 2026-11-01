@@ -1,0 +1,5 @@
+docs/
+.tools/
+.run/
+target/
+*.log

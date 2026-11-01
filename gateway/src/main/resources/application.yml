@@ -1,0 +1,59 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${CUSTOMER_SERVICE_URL:http://localhost:8081}/.well-known/jwks.json
+  cloud:
+    gateway:
+      server:
+        webflux:
+          default-filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@clientKeyResolver}"
+                redis-rate-limiter.replenishRate: ${RATE_LIMIT_PER_SECOND:20}
+                redis-rate-limiter.burstCapacity: ${RATE_LIMIT_BURST:40}
+          routes:
+            - id: customer
+              uri: ${CUSTOMER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/customers/**,/api/auth/**
+            - id: account
+              uri: ${ACCOUNT_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/accounts/**,/api/admin/reconciliation
+            - id: transaction
+              uri: ${TRANSACTION_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/transfers,/api/deposits,/api/withdrawals,/api/transactions/**,/api/statements/**,/api/admin/chaos/**
+            - id: notification
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/notifications/**
+            - id: ai-insights
+              uri: ${AI_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/api/ai/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    redis:
+      enabled: false

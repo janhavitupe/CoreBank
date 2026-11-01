@@ -1,0 +1,50 @@
+{
+  "title": "CoreBank",
+  "uid": "corebank",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "title": "Request rate by service", "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [{ "expr": "sum by (application, job, instance) (rate(http_server_requests_seconds_count[1m]))", "legendFormat": "{{instance}}" }]
+    },
+    {
+      "id": 2, "title": "Error rate", "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } },
+      "targets": [{ "expr": "sum(rate(http_server_requests_seconds_count{status=~\"5..\"}[1m])) / sum(rate(http_server_requests_seconds_count[1m]))", "legendFormat": "5xx share" }]
+    },
+    {
+      "id": 3, "title": "p95 transfer latency", "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{uri=\"/api/transfers\"}[1m])))", "legendFormat": "p95" }]
+    },
+    {
+      "id": 4, "title": "Kafka consumer lag", "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "max by (instance, topic) (kafka_consumer_fetch_manager_records_lag_max)", "legendFormat": "{{instance}} {{topic}}" }]
+    },
+    {
+      "id": 5, "title": "JVM heap used", "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [{ "expr": "sum by (instance) (jvm_memory_used_bytes{area=\"heap\"})", "legendFormat": "{{instance}}" }]
+    },
+    {
+      "id": 6, "title": "Balance cache hit rate", "type": "stat",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "targets": [{ "expr": "sum(corebank_balance_cache_total{result=\"hit\"}) / sum(corebank_balance_cache_total)", "legendFormat": "hit rate" }]
+    }
+  ]
+}

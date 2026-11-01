@@ -1,0 +1,14 @@
+# Azure AKS. The pipeline creates corebank-secrets from GitHub secrets and sets the image names and tags.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: corebank
+resources:
+  - ../../base
+patches:
+  - target:
+      kind: Service
+      name: gateway
+    patch: |-
+      - op: add
+        path: /spec/type
+        value: LoadBalancer

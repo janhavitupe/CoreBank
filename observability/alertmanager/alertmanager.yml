@@ -1,0 +1,15 @@
+global:
+  smtp_smarthost: mailpit:1025
+  smtp_from: alerts@corebank.demo
+  smtp_require_tls: false
+
+route:
+  receiver: ops-email
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 1h
+
+receivers:
+  - name: ops-email
+    email_configs:
+      - to: ops@corebank.demo

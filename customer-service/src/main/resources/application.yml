@@ -1,0 +1,39 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: customer-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/corebank}?currentSchema=customer
+    username: ${DB_USER:corebank}
+    password: ${DB_PASSWORD:corebank}
+    hikari:
+      maximum-pool-size: 5
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    schemas: customer
+    default-schema: customer
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+corebank:
+  admin:
+    email: ${ADMIN_EMAIL:admin@corebank.demo}
+    password: ${ADMIN_PASSWORD:admin-demo-only}
+  jwt:
+    access-minutes: 15
+    refresh-days: 7

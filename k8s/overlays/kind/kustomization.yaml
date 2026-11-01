@@ -1,0 +1,15 @@
+# Throwaway local and CI cluster. These are demo values, not real credentials.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: corebank
+resources:
+  - ../../base
+secretGenerator:
+  - name: corebank-secrets
+    literals:
+      - DB_PASSWORD=corebank
+      - POSTGRES_PASSWORD=corebank
+      - ADMIN_PASSWORD=admin-demo-only
+      - GOOGLE_API_KEY=
+generatorOptions:
+  disableNameSuffixHash: true

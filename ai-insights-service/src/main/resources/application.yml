@@ -1,0 +1,38 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: ai-insights-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/corebank}?currentSchema=ai
+    username: ${DB_USER:corebank}
+    password: ${DB_PASSWORD:corebank}
+    hikari:
+      maximum-pool-size: 5
+  flyway:
+    schemas: ai
+    default-schema: ai
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    consumer:
+      group-id: ai-insights-service
+      auto-offset-reset: earliest
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+corebank:
+  account-service-url: ${ACCOUNT_SERVICE_URL:http://localhost:8082}
+  transaction-service-url: ${TRANSACTION_SERVICE_URL:http://localhost:8083}
+  gemini:
+    api-key: ${GOOGLE_API_KEY:}
+    model: ${GEMINI_MODEL:gemini-2.5-flash}
+    timeout-seconds: 20

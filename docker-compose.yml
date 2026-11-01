@@ -1,0 +1,260 @@
+# Core stack:     docker compose up -d --build
+# Add monitoring: docker compose --profile observability up -d
+# Add logging:    docker compose --profile elk up -d
+# The profiles are optional so the stack fits on a laptop; see README.md.
+
+x-service: &service
+  restart: unless-stopped
+  environment: &service-env
+    SPRING_PROFILES_ACTIVE: docker
+    DB_URL: jdbc:postgresql://postgres:5432/corebank
+    DB_USER: corebank
+    DB_PASSWORD: corebank
+    KAFKA_SERVERS: kafka:9092
+    REDIS_HOST: redis
+  depends_on: &service-deps
+    postgres:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 3s
+  retries: 18
+  start_period: 40s
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: corebank
+      POSTGRES_USER: corebank
+      POSTGRES_PASSWORD: corebank
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U corebank"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:3.9.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx384m
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:8025:8025"
+
+  customer-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: customer-service
+    image: corebank/customer-service:1.0.0
+    environment:
+      <<: *service-env
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin-demo-only}
+    ports:
+      - "127.0.0.1:8081:8081"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8081/actuator/health/readiness | grep -q UP"]
+
+  account-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: account-service
+    image: corebank/account-service:1.0.0
+    ports:
+      - "127.0.0.1:8082:8082"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8082/actuator/health/readiness | grep -q UP"]
+
+  transaction-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: transaction-service
+    image: corebank/transaction-service:1.0.0
+    environment:
+      <<: *service-env
+      ACCOUNT_SERVICE_URL: http://account-service:8082
+      CHAOS_ENABLED: ${CHAOS_ENABLED:-true}
+    ports:
+      - "127.0.0.1:8083:8083"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8083/actuator/health/readiness | grep -q UP"]
+
+  notification-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: notification-service
+    image: corebank/notification-service:1.0.0
+    environment:
+      <<: *service-env
+      MAIL_HOST: mailpit
+    ports:
+      - "127.0.0.1:8084:8084"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8084/actuator/health/readiness | grep -q UP"]
+
+  ai-insights-service:
+    <<: *service
+    build:
+      context: .
+      args:
+        SERVICE: ai-insights-service
+    image: corebank/ai-insights-service:1.0.0
+    environment:
+      <<: *service-env
+      ACCOUNT_SERVICE_URL: http://account-service:8082
+      TRANSACTION_SERVICE_URL: http://transaction-service:8083
+      GOOGLE_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+    ports:
+      - "127.0.0.1:8085:8085"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8085/actuator/health/readiness | grep -q UP"]
+
+  gateway:
+    restart: unless-stopped
+    build:
+      context: .
+      args:
+        SERVICE: gateway
+    image: corebank/gateway:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      REDIS_HOST: redis
+      CUSTOMER_SERVICE_URL: http://customer-service:8081
+      ACCOUNT_SERVICE_URL: http://account-service:8082
+      TRANSACTION_SERVICE_URL: http://transaction-service:8083
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+      AI_SERVICE_URL: http://ai-insights-service:8085
+      RATE_LIMIT_PER_SECOND: ${RATE_LIMIT_PER_SECOND:-20}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-40}
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      customer-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/actuator/health/readiness | grep -q UP"]
+
+  prometheus:
+    profiles: [observability]
+    image: prom/prometheus:v3.5.0
+    volumes:
+      - ./observability/prometheus:/etc/prometheus:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=2d
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  alertmanager:
+    profiles: [observability]
+    image: prom/alertmanager:v0.28.1
+    volumes:
+      - ./observability/alertmanager:/etc/alertmanager:ro
+    ports:
+      - "127.0.0.1:9093:9093"
+
+  grafana:
+    profiles: [observability]
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin-demo-only
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  elasticsearch:
+    profiles: [elk]
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.2
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -qE 'green|yellow'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  logstash:
+    profiles: [elk]
+    image: docker.elastic.co/logstash/logstash:8.19.2
+    environment:
+      LS_JAVA_OPTS: -Xms200m -Xmx256m
+      XPACK_MONITORING_ENABLED: "false"
+    volumes:
+      - ./observability/logstash/pipeline:/usr/share/logstash/pipeline:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  kibana:
+    profiles: [elk]
+    image: docker.elastic.co/kibana/kibana:8.19.2
+    environment:
+      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+      NODE_OPTIONS: --max-old-space-size=512
+    ports:
+      - "127.0.0.1:5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  elasticsearch-data:

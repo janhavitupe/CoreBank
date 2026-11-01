@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: corebank-config
+data:
+  SPRING_PROFILES_ACTIVE: docker
+  DB_URL: jdbc:postgresql://postgres:5432/corebank
+  DB_USER: corebank
+  KAFKA_SERVERS: kafka:9092
+  REDIS_HOST: redis
+  MAIL_HOST: mailpit
+  CUSTOMER_SERVICE_URL: http://customer-service:8081
+  ACCOUNT_SERVICE_URL: http://account-service:8082
+  TRANSACTION_SERVICE_URL: http://transaction-service:8083
+  NOTIFICATION_SERVICE_URL: http://notification-service:8084
+  AI_SERVICE_URL: http://ai-insights-service:8085

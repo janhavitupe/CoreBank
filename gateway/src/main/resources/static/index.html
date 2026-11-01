@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoreBank Demo</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --ink:#17212f; --muted:#5d6b7c; --line:#dfe4ea; --brand:#0f5c8c; --ok:#14704a; --bad:#b3261e; --warn:#8a5a00; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#10151c; --card:#18202a; --ink:#e7ecf2; --muted:#9aa8b8; --line:#2c3743; --brand:#6db6e6; --ok:#5fd19f; --bad:#ff9a92; --warn:#e8bb5c; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:8px 20px; align-items:baseline; padding:16px; border-bottom:1px solid var(--line); background:var(--card); }
+  h1 { margin:0; font-size:20px; } h2 { margin:0 0 10px; font-size:15px; }
+  header nav { display:flex; flex-wrap:wrap; gap:12px; margin-left:auto; font-size:13px; }
+  a { color:var(--brand); }
+  main { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; padding:16px; max-width:1300px; margin:auto; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; min-width:0; }
+  label { display:block; margin:6px 0; font-size:13px; color:var(--muted); }
+  input, select, button { font:inherit; }
+  input, select { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
+  button { padding:7px 11px; border:1px solid var(--brand); border-radius:6px; background:var(--brand); color:#fff; cursor:pointer; margin:6px 6px 0 0; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) button { color:#10151c; } }
+  button.secondary { background:transparent; color:var(--brand); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .muted { color:var(--muted); font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:5px 4px; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  #log { grid-column:1/-1; }
+  pre { margin:0; max-height:260px; overflow:auto; font:12px/1.5 ui-monospace,Consolas,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .answer { white-space:pre-wrap; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CoreBank</h1>
+  <span class="muted" id="who">Not signed in</span>
+  <nav>
+    <a href="http://localhost:8025" target="_blank" rel="noopener">Mailpit</a>
+    <a href="http://localhost:3000/d/corebank" target="_blank" rel="noopener">Grafana</a>
+    <a href="http://localhost:5601" target="_blank" rel="noopener">Kibana</a>
+    <a href="http://localhost:8083/swagger-ui/index.html" target="_blank" rel="noopener">Swagger</a>
+  </nav>
+</header>
+<main>
+  <section>
+    <h2>1. Sign in</h2>
+    <label>Name <input id="name" value="Asha Rao"></label>
+    <label>Email <input id="email" value="asha@example.com"></label>
+    <label>Password <input id="password" type="password" value="password123"></label>
+    <button onclick="register()">Register</button>
+    <button class="secondary" onclick="login()">Log in</button>
+    <button class="secondary" onclick="adminLogin()">Log in as admin</button>
+  </section>
+
+  <section>
+    <h2>2. Accounts</h2>
+    <table><thead><tr><th>Number</th><th>Type</th><th>Status</th><th class="num">Balance</th></tr></thead><tbody id="accounts"></tbody></table>
+    <button onclick="openAccount('SAVINGS')">Open savings</button>
+    <button class="secondary" onclick="openAccount('CURRENT')">Open current</button>
+    <button class="secondary" onclick="refresh()">Refresh</button>
+  </section>
+
+  <section>
+    <h2>3. Move money</h2>
+    <label>From account <input id="from" placeholder="CB..."></label>
+    <label>To account <input id="to" placeholder="CB..."></label>
+    <div class="row">
+      <label>Amount <input id="amount" value="2500"></label>
+      <label>Description <input id="description" value="Grocery shopping"></label>
+    </div>
+    <button onclick="deposit()">Deposit to "From"</button>
+    <button onclick="transfer(true)">Transfer</button>
+    <button class="secondary" id="retry" onclick="transfer(false)" disabled>Retry same request</button>
+    <p class="muted" id="key">The retry button resends the same Idempotency-Key.</p>
+  </section>
+
+  <section>
+    <h2>4. Notifications</h2>
+    <table><tbody id="notifications"></tbody></table>
+    <button class="secondary" onclick="notifications()">Refresh</button>
+  </section>
+
+  <section>
+    <h2>5. Statement</h2>
+    <table><thead><tr><th>Type</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr></thead><tbody id="statement"></tbody></table>
+    <button class="secondary" onclick="statement()">Load for "From"</button>
+  </section>
+
+  <section>
+    <h2>6. Ask the assistant</h2>
+    <label>Question <input id="question" value="How much did I spend on food this month?"></label>
+    <button onclick="ask()">Ask</button>
+    <div class="answer" id="answer"></div>
+  </section>
+
+  <section>
+    <h2>7. Admin checks</h2>
+    <p class="muted">Sign in as admin first.</p>
+    <button onclick="reconcile()">Reconcile ledger</button>
+    <button class="secondary" onclick="armCrash()">Crash next settlement</button>
+    <div class="answer" id="recon"></div>
+  </section>
+
+  <section id="log">
+    <h2>Request log</h2>
+    <pre id="logs"></pre>
+  </section>
+</main>
+<script>
+  const $ = id => document.getElementById(id);
+  let token = null, lastKey = null;
+
+  function log(line, cls) {
+    const row = document.createElement('div');
+    row.textContent = new Date().toLocaleTimeString() + '  ' + line;
+    if (cls) row.className = cls;
+    $('logs').prepend(row);
+  }
+
+  async function api(method, path, body, headers = {}) {
+    const res = await fetch(path, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...headers },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+    const correlation = res.headers.get('X-Correlation-Id');
+    const replayed = res.headers.get('Idempotent-Replayed');
+    log(`${method} ${path} -> ${res.status}${replayed === 'true' ? ' REPLAYED' : ''}  correlation=${correlation}`, res.ok ? 'ok' : 'bad');
+    if (!res.ok && data && data.message) log(`${data.code}: ${data.message}`, 'bad');
+    return { ok: res.ok, status: res.status, data, replayed };
+  }
+
+  const cell = (text, cls) => { const td = document.createElement('td'); td.textContent = text ?? ''; if (cls) td.className = cls; return td; };
+  const fill = (id, rows) => { const body = $(id); body.replaceChildren(...rows.map(cells => { const tr = document.createElement('tr'); tr.append(...cells); return tr; })); };
+
+  async function register() {
+    await api('POST', '/api/customers', { name: $('name').value, email: $('email').value, password: $('password').value });
+    await login();
+  }
+
+  async function signIn(email, password) {
+    const r = await api('POST', '/api/auth/login', { email, password });
+    if (!r.ok) return;
+    token = r.data.accessToken;
+    $('who').textContent = `${email} (${r.data.role})`;
+    await refresh();
+  }
+  const login = () => signIn($('email').value, $('password').value);
+  const adminLogin = () => signIn('admin@corebank.demo', 'admin-demo-only');
+
+  async function openAccount(type) { await api('POST', '/api/accounts', { type }); await refresh(); }
+
+  async function refresh() {
+    const r = await api('GET', '/api/accounts');
+    if (!r.ok) return;
+    const rows = await Promise.all(r.data.map(async a => {
+      const b = await api('GET', `/api/accounts/${a.accountNumber}/balance`);
+      return [cell(a.accountNumber), cell(a.type), cell(a.status), cell(b.ok ? Number(b.data.balance).toFixed(2) : '?', 'num')];
+    }));
+    fill('accounts', rows);
+    if (!$('from').value && r.data[0]) $('from').value = r.data[0].accountNumber;
+    await notifications();
+  }
+
+  async function deposit() {
+    await api('POST', '/api/deposits', { accountNumber: $('from').value, amount: $('amount').value, description: $('description').value },
+      { 'Idempotency-Key': crypto.randomUUID() });
+    await refresh();
+  }
+
+  async function transfer(fresh) {
+    if (fresh) lastKey = crypto.randomUUID();
+    $('key').textContent = 'Idempotency-Key: ' + lastKey;
+    $('retry').disabled = false;
+    await api('POST', '/api/transfers',
+      { fromAccount: $('from').value, toAccount: $('to').value, amount: $('amount').value, description: $('description').value },
+      { 'Idempotency-Key': lastKey });
+    await refresh();
+  }
+
+  async function notifications() {
+    const r = await api('GET', '/api/notifications');
+    if (r.ok) fill('notifications', r.data.filter(n => n.channel === 'IN_APP').slice(0, 8).map(n => [cell(n.message)]));
+  }
+
+  async function statement() {
+    const r = await api('GET', `/api/statements/${$('from').value}`);
+    if (r.ok) fill('statement', r.data.map(t => [cell(t.type), cell(t.description), cell(t.category), cell(Number(t.amount).toFixed(2), 'num')]));
+  }
+
+  async function ask() {
+    $('answer').textContent = 'Thinking...';
+    const r = await api('POST', '/api/ai/assistant', { question: $('question').value });
+    $('answer').textContent = r.ok ? r.data.answer : 'The assistant is unavailable right now.';
+  }
+
+  async function reconcile() {
+    const r = await api('GET', '/api/admin/reconciliation');
+    if (r.ok) $('recon').textContent = JSON.stringify(r.data, null, 2);
+  }
+
+  async function armCrash() { await api('POST', '/api/admin/chaos/crash-next-settlement'); }
+</script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  SERVICES: customer-service account-service transaction-service notification-service ai-insights-service gateway
+
+jobs:
+  test:
+    name: Compile, test and analyse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - name: Unit and Testcontainers integration tests
+        run: mvn -B verify
+      - name: Static analysis
+        run: mvn -B -DskipTests com.github.spotbugs:spotbugs-maven-plugin:4.9.3.0:spotbugs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jars
+          path: "*/target/*-1.0.0.jar"
+
+  deploy-kind:
+    name: Build images and deploy to Kubernetes (kind)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jars
+      - name: Build one image per service
+        run: |
+          for s in $SERVICES; do
+            docker build --build-arg SERVICE=$s -t corebank/$s:1.0.0 .
+          done
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: corebank
+      - name: Load images and apply manifests
+        run: |
+          for s in $SERVICES; do
+            kind load docker-image corebank/$s:1.0.0 --name corebank
+          done
+          kubectl apply -k k8s/overlays/kind
+      - name: Wait for every service to become ready
+        run: |
+          kubectl -n corebank rollout status statefulset/postgres --timeout=180s
+          kubectl -n corebank rollout status statefulset/kafka --timeout=180s
+          for s in $SERVICES; do
+            kubectl -n corebank rollout status deployment/$s --timeout=300s
+          done
+      - name: Smoke test through the gateway
+        run: |
+          kubectl -n corebank port-forward service/gateway 8080:8080 &
+          sleep 5
+          curl -fsS http://localhost:8080/actuator/health/readiness
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/accounts)
+          test "$code" = "401"
+      - name: Show pods on failure
+        if: failure()
+        run: |
+          kubectl -n corebank get pods -o wide
+          kubectl -n corebank describe pods | tail -60
+
+  deploy-aks:
+    name: Push to ACR and deploy to AKS
+    needs: test
+    # Skipped until the repository variable AKS_ENABLED is true, so the pipeline stays green with no cluster.
+    if: github.ref == 'refs/heads/main' && vars.AKS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jars
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Build and push images to Azure Container Registry
+        run: |
+          az acr login --name ${{ vars.ACR_NAME }}
+          for s in $SERVICES; do
+            image=${{ vars.ACR_NAME }}.azurecr.io/corebank/$s:${{ github.sha }}
+            docker build --build-arg SERVICE=$s -t $image .
+            docker push $image
+          done
+      - uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ vars.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ vars.AKS_CLUSTER }}
+      - name: Deploy
+        run: |
+          kubectl create namespace corebank --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n corebank create secret generic corebank-secrets \
+            --from-literal=DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
+            --from-literal=POSTGRES_PASSWORD='${{ secrets.DB_PASSWORD }}' \
+            --from-literal=ADMIN_PASSWORD='${{ secrets.ADMIN_PASSWORD }}' \
+            --from-literal=GOOGLE_API_KEY='${{ secrets.GEMINI_API_KEY }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+          cd k8s/overlays/aks
+          for s in $SERVICES; do
+            kustomize edit set image corebank/$s=${{ vars.ACR_NAME }}.azurecr.io/corebank/$s:${{ github.sha }}
+          done
+          kubectl apply -k .
+          for s in $SERVICES; do
+            kubectl -n corebank rollout status deployment/$s --timeout=300s
+          done

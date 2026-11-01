@@ -1,0 +1,46 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: account-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/corebank}?currentSchema=account
+    username: ${DB_USER:corebank}
+    password: ${DB_PASSWORD:corebank}
+    hikari:
+      maximum-pool-size: 10
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    schemas: account
+    default-schema: account
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      timeout: 200ms
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    redis:
+      enabled: false
+
+corebank:
+  balance-cache:
+    ttl-seconds: 60
+  low-balance:
+    threshold: 1000
+    check-ms: 60000
